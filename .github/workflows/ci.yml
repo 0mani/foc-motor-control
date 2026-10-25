@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j
+      - name: C unit tests
+        run: ctest --test-dir build --output-on-failure
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Closed-loop tests
+        run: |
+          pip install -r requirements.txt
+          python -m pytest -q
+      - name: Regenerate figures
+        run: python -m sim.run
+      - uses: actions/upload-artifact@v4
+        with:
+          name: figures
+          path: docs/*.png
+
+  arm-cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install arm-none-eabi-gcc
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: Build for Cortex-M4F
+        run: |
+          for f in src/*.c; do
+            arm-none-eabi-gcc -std=c99 -O2 -mcpu=cortex-m4 -mthumb -mfloat-abi=hard \
+              -mfpu=fpv4-sp-d16 -Wall -Wextra -Werror -Wdouble-promotion \
+              -Iinclude -c "$f" -o "${f%.c}.o"
+          done
+          arm-none-eabi-size src/*.o
